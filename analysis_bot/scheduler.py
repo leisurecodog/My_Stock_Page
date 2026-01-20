@@ -309,7 +309,13 @@ async def daily_analysis_job(run_daily=True, run_anchors=True, run_tracked=True)
             subscribers = []
             with Session(engine) as session:
                  subs = session.exec(select(Subscriber).where(Subscriber.is_active == True)).all()
-                 subscribers = [s.chat_id for s in subs]
+                 # Avoid sending twice when the Admin/Main chat_id is also a subscriber.
+                 admin_chat_id_int = None
+                 try:
+                     admin_chat_id_int = int(chat_id) if chat_id is not None and str(chat_id).strip() else None
+                 except Exception:
+                     admin_chat_id_int = None
+                 subscribers = [s.chat_id for s in subs if s.chat_id != admin_chat_id_int]
             
             for sub_id in subscribers:
                 await send_daily_bundle(sub_id)
@@ -367,7 +373,13 @@ async def daily_podcast_job():
             subscribers = []
             with Session(engine) as session:
                  subs = session.exec(select(Subscriber).where(Subscriber.is_active == True)).all()
-                 subscribers = [s.chat_id for s in subs]
+                 # Avoid sending twice when the Admin/Main chat_id is also a subscriber.
+                 admin_chat_id_int = None
+                 try:
+                     admin_chat_id_int = int(chat_id) if chat_id is not None and str(chat_id).strip() else None
+                 except Exception:
+                     admin_chat_id_int = None
+                 subscribers = [s.chat_id for s in subs if s.chat_id != admin_chat_id_int]
                  
             for sub_id in subscribers:
                 try:
