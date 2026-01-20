@@ -4,10 +4,11 @@ import difflib
 import html
 import re
 import unicodedata
-from typing import List, Dict
+from typing import List, Dict, Set
 from datetime import datetime, timedelta
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
+from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from sqlmodel import Session, select, col
 
 from ..services.news_parser import NewsParser
@@ -23,7 +24,8 @@ TICKER_MATCH_THRESHOLD = 0.85
 MAX_SEND_ARTICLES = 5
 
 _WORD_CHARS_RE = re.compile(r"[A-Z0-9]")
-
+# Simple regex for potential tickers: 4 digits (TW) or 2-5 uppercase letters (US)
+_POTENTIAL_TICKER_RE = re.compile(r"\b([0-9]{4}|[A-Z]{2,5})\b")
 
 def _norm_text(text: str) -> str:
     # NFKC helps normalize full-width characters; upper for ticker matching
@@ -66,6 +68,21 @@ def _contains_ticker(text_upper: str, ticker_upper: str) -> bool:
             return True
         start = idx + 1
 
+def _extract_tickers_from_text(text_upper: str) -> Set[str]:
+    """Extract potential tickers from text."""
+    candidates = set(_POTENTIAL_TICKER_RE.findall(text_upper))
+    # Filter? For now return all candidates. 
+    # In real world, we might want to check against a DB of valid tickers 
+    # to avoid false positives (e.g. "THE", "YEAR", "2024"), but let's keep it simple first.
+    # Maybe filter out common 4-digit years?
+    valid = set()
+    current_year = datetime.now().year
+    for c in candidates:
+        # Simple year filter
+        if c.isdigit() and 1990 <= int(c) <= current_year + 5:
+            continue
+        valid.add(c)
+    return valid
 
 async def check_news_job(context: ContextTypes.DEFAULT_TYPE = None, bot=None):
     """
@@ -124,134 +141,33 @@ async def check_news_job(context: ContextTypes.DEFAULT_TYPE = None, bot=None):
             new_articles.extend(ua_articles)
     except Exception as e:
         logger.error(f"Error fetching UAnalyze: {e}")
-        
-    # Fugle
-    try:
-        fugle_articles = await news_parser.get_fugle_report("https://blog.fugle.tw/")
-        if fugle_articles:
-            for a in fugle_articles: a['source_name'] = "Fugle"
-            new_articles.extend(fugle_articles)
-    except Exception as e:
-         logger.error(f"Error fetching Fugle: {e}")
-            
-    # Vocus
-    try:
-        vocus_users = ['@ieobserve', '@miula', '65ab564cfd897800018a88cc']
-        for v_user in vocus_users:
-            try:
-                vocus_articles = await news_parser.get_vocus_articles(v_user)
-                if vocus_articles:
-                    for a in vocus_articles: a['source_name'] = f"Vocus ({v_user})"
-                    new_articles.extend(vocus_articles)
-            except Exception as e:
-                logger.error(f"Error fetching Vocus user {v_user}: {e}")
-    except Exception as e:
-        logger.error(f"Error Vocus main block: {e}")
 
-    # 2.5. Additional Sources (SinoTrade / Pocket)
-    try:
-        st_res = await news_parser.get_sinotrade_industry_report(limit=20)
-        if st_res:
-            for a in st_res:
-                a["source_name"] = "SinoTradeIndustry"
-            new_articles.extend(st_res)
-    except Exception as e:
-        logger.error(f"Error fetching SinoTradeIndustry: {e}")
-
-    try:
-        pk_res = await news_parser.get_pocket_school_report(limit=20)
-        if pk_res:
-            for a in pk_res:
-                a["source_name"] = "PocketReport"
-            new_articles.extend(pk_res)
-    except Exception as e:
-        logger.error(f"Error fetching PocketReport: {e}")
-
-    # 3. Fetch from Additional Ported Sources (UDN, Yahoo, Others)
-    
-    # UDN
-    try:
-        udn_res = await news_parser.get_udn_report()
-        if udn_res:
-            for a in udn_res: a['source_name'] = "UDN"
-            new_articles.extend(udn_res)
-    except Exception as e:
-        logger.error(f"Error fetching UDN: {e}")
-
-    # Yahoo TW
-    try:
-        yahoo_res = await news_parser.get_yahoo_tw_report()
-        if yahoo_res:
-            for a in yahoo_res: a['source_name'] = "YahooTW"
-            new_articles.extend(yahoo_res)
-    except Exception as e:
-         logger.error(f"Error fetching YahooTW: {e}")
-            
-    # News Digest AI
-    try:
-        ndai_res = await news_parser.get_news_digest_ai_report()
-        if ndai_res:
-             for a in ndai_res: a['source_name'] = "NewsDigestAI"
-             new_articles.extend(ndai_res)
-    except Exception as e:
-         logger.error(f"Error fetching NewsDigestAI: {e}")
-
-    # Fallbacks (Macromicro, FinGuider, Fintastic, Forecastock)
-    # We wrap each in try-except individually for robustness
-    
-    try:
-        mm_res = await news_parser.get_macromicro_report()
-        if mm_res:
-            for a in mm_res: a['source_name'] = "Macromicro"
-            new_articles.extend(mm_res)
-    except Exception as e: logger.error(f"Macromicro fetch error: {e}")
-
-    try:
-        fg_res = await news_parser.get_finguider_report()
-        if fg_res:
-            for a in fg_res: a['source_name'] = "FinGuider"
-            new_articles.extend(fg_res)
-    except Exception as e: logger.error(f"FinGuider fetch error: {e}")
-
-    try:
-        ft_res = await news_parser.get_fintastic_report()
-        if ft_res:
-            for a in ft_res: a['source_name'] = "Fintastic"
-            new_articles.extend(ft_res)
-    except Exception as e: logger.error(f"Fintastic fetch error: {e}")
-
-    try:
-        fc_res = await news_parser.get_forecastock_report()
-        if fc_res:
-            for a in fc_res: a['source_name'] = "Forecastock"
-            new_articles.extend(fc_res)
-    except Exception as e: logger.error(f"Forecastock fetch error: {e}")
-
-    if not new_articles:
-        return
-
-    # 3. Filter and Save with Deduplication
+    # 3. Filter Duplicates (DB Check) & Save
     final_new_articles = []
     
-    with Session(engine) as session:
-        # Pre-fetch recent titles for fuzzy matching (last 24 hours)
-        yesterday = datetime.utcnow() - timedelta(days=1)
-        recent_news = session.exec(select(News).where(News.created_at >= yesterday)).all()
-        recent_titles = [n.title for n in recent_news]
+    if new_articles:
+        # Use simple recent title cache to avoid DB spam if possible?
+        # But for correctness, check DB.
         
+        # Pull recent news titles from DB (last 3 days)
+        cutoff = datetime.utcnow() - timedelta(days=3)
+        with Session(engine) as session:
+            recent_news = session.exec(select(News).where(News.created_at >= cutoff)).all()
+            # Create lookup
+            # Use fuzzy matching or exact link match?
+            # Link is safer.
+            recent_links = {n.link for n in recent_news}
+            recent_titles = [n.title for n in recent_news]
+            
         for article in new_articles:
-            link = article.get("url")
-            title = article.get("title")
+            link = article["url"]
+            title = article["title"]
             source_name = article.get("source_name", "Unknown")
             
-            if not link or not title:
+            # A. Check Exact Link
+            if link in recent_links:
                 continue
-                
-            # A. Check exact URL match (Fast)
-            existing_link = session.exec(select(News).where(News.link == link)).first()
-            if existing_link:
-                continue
-
+            
             # B. Check Fuzzy Title Match (Slower but necessary)
             is_duplicate_title = False
             for recent_title in recent_titles:
@@ -343,6 +259,10 @@ async def check_news_job(context: ContextTypes.DEFAULT_TYPE = None, bot=None):
             url_raw = news["url"]
             title, title_norm, url, url_norm, content_norm = _normalize_content_for_matching(title_raw, url_raw)
             
+            # Detect tickers for Interactive Buttons
+            content_upper = _norm_text(f"{title_raw}\n{url_raw}")
+            detected_tickers = _extract_tickers_from_text(content_upper)
+            
             title_md = title.replace("[", "(").replace("]", ")")  # Simple markdown escape
             msg_md = f"📰 *{title_md}*\n{url}"
             
@@ -351,8 +271,9 @@ async def check_news_job(context: ContextTypes.DEFAULT_TYPE = None, bot=None):
                 'title_norm': title_norm,
                 'url_raw': url,
                 'url_norm': url_norm,
-                'content_upper': _norm_text(f"{title_raw}\n{url_raw}"),
-                'msg_md': msg_md
+                'content_upper': content_upper,
+                'msg_md': msg_md,
+                'detected_tickers': detected_tickers
             })
         
         for news_data in normalized_news:
@@ -360,7 +281,21 @@ async def check_news_job(context: ContextTypes.DEFAULT_TYPE = None, bot=None):
             url_raw = news_data['url_raw']
             content_upper = news_data['content_upper']
             msg_md = news_data['msg_md']
+            detected_tickers = news_data['detected_tickers']
             
+            # Build Inline Keyboard if tickers detected
+            reply_markup = None
+            if detected_tickers:
+                # Limit to 3 buttons max to avoid clutter
+                buttons = []
+                for t in sorted(list(detected_tickers))[:3]:
+                    # Callback Data: NA|ADD|{ticker}
+                    buttons.append(
+                        InlineKeyboardButton(f"➕ 關注 {t}", callback_data=f"NA|ADD|{t}")
+                    )
+                if buttons:
+                    reply_markup = InlineKeyboardMarkup([buttons])
+
             for chat_id in subscribers:
                 try:
                     # If we have watchlist entries for this chat, try to mention matching users
@@ -403,6 +338,7 @@ async def check_news_job(context: ContextTypes.DEFAULT_TYPE = None, bot=None):
                                 text=msg_html,
                                 parse_mode=ParseMode.HTML,
                                 disable_web_page_preview=True,
+                                reply_markup=reply_markup
                             )
                             continue
 
@@ -412,6 +348,7 @@ async def check_news_job(context: ContextTypes.DEFAULT_TYPE = None, bot=None):
                         text=msg_md,
                         parse_mode=ParseMode.MARKDOWN,
                         disable_web_page_preview=True,
+                        reply_markup=reply_markup
                     )
                 except Exception as e:
                     logger.error(

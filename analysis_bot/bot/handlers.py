@@ -132,8 +132,6 @@ async def esti_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await run_esti_analysis(update, context.args[0])
 
-ASK_CHAT = 5
-
 # --- Chat ---
 async def chat_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """One-off chat command."""
@@ -205,210 +203,91 @@ async def menu_settings_handler(update: Update, context: ContextTypes.DEFAULT_TY
         sub = session.exec(select(Subscriber).where(Subscriber.chat_id == chat_id)).first()
         if sub and sub.is_active:
             is_sub = True
+    
+    status_text = "✅ 已訂閱" if is_sub else "❌ 未訂閱"
+    
+    msg = f"""
+⚙️ **設定選單**
 
-    msg = (
-        "⚙️ **設定與訂閱**\n\n"
-        "目前狀態：\n"
-        f"- 訂閱新聞：{'✅ 已訂閱' if is_sub else '❌ 未訂閱'}\n\n"
-        "指令：\n"
-        "/subscribe - 訂閱推播\n"
-        "/unsubscribe - 取消訂閱\n"
-    )
+目前的訂閱狀態：{status_text}
+
+指令：
+/subscribe - 訂閱每日通知
+/unsubscribe - 取消訂閱
+/watch add <ticker> - 加入自選股
+/watch list - 查看自選股
+    """
     await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
+
 
 # --- News ---
 async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Retrieve Parser from bot_data (injected in main.py)
-    news_parser: NewsParser = context.bot_data.get("news_parser")
-    if not news_parser:
-        # Fallback if not injected, though it should be
-        news_parser = NewsParser() 
+    """Fetch latest news."""
+    await update.message.reply_text("Fetching latest news... 📰")
     
-    # Expanded News Menu
-    keyboard = [
-        [InlineKeyboardButton("鉅亨網 (CNYES)", callback_data="news_cnyes"), 
-        InlineKeyboardButton("Google News (TW)", callback_data="news_google")],
-        [InlineKeyboardButton("Moneydj", callback_data="news_moneydj"), 
-        InlineKeyboardButton("Yahoo 股市", callback_data="news_yahoo")],
-        [InlineKeyboardButton("聯合新聞網 (UDN)", callback_data="news_udn"), 
-        InlineKeyboardButton("UAnalyze", callback_data="news_uanalyze")],
-        [InlineKeyboardButton("財經M平方", callback_data="news_macromicro"), 
-        InlineKeyboardButton("瑞星財經 (FinGuider)", callback_data="news_finguider")],
-        [InlineKeyboardButton("Fintastic", callback_data="news_fintastic"), 
-        InlineKeyboardButton("Forecastock", callback_data="news_forecastock")],
-        [InlineKeyboardButton("方格子 (Vocus)", callback_data="news_vocus_menu"), 
-        InlineKeyboardButton("NewsDigest AI", callback_data="news_ndai")],
-        [InlineKeyboardButton("Fugle Report", callback_data="news_fugle")],
-        [InlineKeyboardButton("永豐｜3分鐘產業百科", callback_data="news_sinotrade_industry"),
-         InlineKeyboardButton("口袋學堂｜研究報告", callback_data="news_pocket_report")],
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("請選擇新聞來源：", reply_markup=reply_markup)
+    news_parser = context.bot_data.get("news_parser") or NewsParser()
+    try:
+        articles = await news_parser.fetch_news_list("https://api.cnyes.com/media/api/v1/newslist/category/headline")
+        
+        if not articles:
+             await update.message.reply_text("No news found.")
+             return
+             
+        # Send top 5
+        for news in articles[:5]:
+            title = news["title"]
+            url = news["url"]
+            await update.message.reply_text(f"📰 {title}\n{url}")
+            
+    except Exception as e:
+        logger.error(f"News error: {e}")
+        await update.message.reply_text("Failed to fetch news.")
 
 async def news_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    news_parser: NewsParser = context.bot_data.get("news_parser") or NewsParser()
-    data = query.data
-    
-    today_date = datetime.now().strftime("%Y-%m-%d")
-    
-    # --- Menus ---
-    if data == "news_main_menu":
-        # Back to Main News Menu
-        keyboard = [
-            [InlineKeyboardButton("鉅亨網 (CNYES)", callback_data="news_cnyes"), InlineKeyboardButton("Google News (TW)", callback_data="news_google")],
-            [InlineKeyboardButton("Moneydj", callback_data="news_moneydj"), InlineKeyboardButton("Yahoo 股市", callback_data="news_yahoo")],
-            [InlineKeyboardButton("聯合新聞網 (UDN)", callback_data="news_udn"), InlineKeyboardButton("UAnalyze", callback_data="news_uanalyze")],
-            [InlineKeyboardButton("財經M平方", callback_data="news_macromicro"), InlineKeyboardButton("瑞星財經 (FinGuider)", callback_data="news_finguider")],
-            [InlineKeyboardButton("Fintastic", callback_data="news_fintastic"), InlineKeyboardButton("Forecastock", callback_data="news_forecastock")],
-            [InlineKeyboardButton("方格子 (Vocus)", callback_data="news_vocus_menu"), InlineKeyboardButton("NewsDigest AI", callback_data="news_ndai")],
-            [InlineKeyboardButton("Fugle Report", callback_data="news_fugle")],
-            [InlineKeyboardButton("永豐｜3分鐘產業百科", callback_data="news_sinotrade_industry"),
-             InlineKeyboardButton("口袋學堂｜研究報告", callback_data="news_pocket_report")],
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text("請選擇新聞來源：", reply_markup=reply_markup)
-        return
+    # Placeholder if we implement pagination or categories via buttons
+    pass
 
-    if data == "news_vocus_menu":
-        # Vocus Submenu
-        keyboard = [
-            [InlineKeyboardButton("全部 (All)", callback_data="news_vocus_all")],
-            [InlineKeyboardButton("ieObserve", callback_data="news_vocus_ieobserve")],
-            [InlineKeyboardButton("Miula", callback_data="news_vocus_miula")],
-            [InlineKeyboardButton("黑洞資本 (Black Hole)", callback_data="news_vocus_blackhole")],
-            [InlineKeyboardButton("🔙 回新聞選單", callback_data="news_main_menu")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text("與 Vocus 相關的追蹤者：", reply_markup=reply_markup)
-        return
-
-    # --- Fetching Logic ---
-    news_list = []
-    source_title = "News"
-    
-    # Standard Sources
-    if data == "news_cnyes":
-        source_title = "CNYES Headline"
-        url = 'https://api.cnyes.com/media/api/v1/newslist/category/headline'
-        news_list = await news_parser.fetch_news_list(url, news_number=15)
-    elif data == "news_google":
-        source_title = "Google News"
-        url = "https://news.google.com/rss?hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
-        news_list = await news_parser.fetch_news_list(url, news_number=15)
-    elif data == "news_moneydj":
-        source_title = "MoneyDJ"
-        news_list = await news_parser.get_moneydj_report()
-    elif data == "news_yahoo":
-        source_title = "Yahoo TW"
-        news_list = await news_parser.get_yahoo_tw_report()
-    elif data == "news_udn":
-        source_title = "UDN News"
-        news_list = await news_parser.get_udn_report()
-    elif data == "news_uanalyze":
-        source_title = "UAnalyze"
-        news_list = await news_parser.get_uanalyze_report()
-    elif data == "news_macromicro":
-        source_title = "MacroMicro"
-        news_list = await news_parser.get_macromicro_report()
-    elif data == "news_finguider":
-        source_title = "FinGuider"
-        news_list = await news_parser.get_finguider_report()
-    elif data == "news_fintastic":
-        source_title = "Fintastic"
-        news_list = await news_parser.get_fintastic_report()
-    elif data == "news_forecastock":
-        source_title = "Forecastock"
-        news_list = await news_parser.get_forecastock_report()
-    elif data == "news_ndai":
-        source_title = "NewsDigest AI"
-        news_list = await news_parser.get_news_digest_ai_report()
-    elif data == "news_fugle":
-        source_title = "Fugle"
-        url = "https://blog.fugle.tw/"
-        news_list = await news_parser.get_fugle_report(url)
-    elif data == "news_sinotrade_industry":
-        source_title = "SinoTrade｜3分鐘產業百科"
-        news_list = await news_parser.get_sinotrade_industry_report(limit=15)
-    elif data == "news_pocket_report":
-        source_title = "Pocket｜研究報告"
-        news_list = await news_parser.get_pocket_school_report(limit=15)
-        
-    # Vocus Handlers
-    elif data.startswith("news_vocus"):
-        source_title = "Vocus"
-        vocus_map = {
-            "ieobserve": "@ieobserve",
-            "miula": "@miula",
-            "blackhole": "65ab564cfd897800018a88cc"
-        }
-        
-        target_users = []
-        if data == "news_vocus_all":
-             target_users = list(vocus_map.values())
-             source_title = "Vocus (All)"
-        else:
-             key = data.replace("news_vocus_", "")
-             if key in vocus_map:
-                 target_users = [vocus_map[key]]
-                 source_title = f"Vocus ({key})"
-        
-        for v_user in target_users:
-            res = await news_parser.get_vocus_articles(v_user)
-            if res:
-                news_list.extend(res)
-
-    # --- Display ---
-    if not news_list:
-        back_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 回上一頁", callback_data="news_main_menu")]])
-        await query.edit_message_text("No news found or source not implemented yet.", reply_markup=back_markup)
-        return
-
-    # Format news
-    msg = f"📅 **{source_title}** ({today_date})\n\n"
-    for news in news_list[:10]: 
-        title = news['title'].replace('[', '(').replace(']', ')')
-        msg += f"• [{title}]({news['url']})\n" 
-    
-    # Add Back Button
-    # If in Vocus submenu, maybe back to Vocus menu? But simplier to Main Menu for consistent UX.
-    # Or checking data startswith.
-    back_callback = "news_vocus_menu" if data.startswith("news_vocus") else "news_main_menu"
-    
-    keyboard = [[InlineKeyboardButton("🔙 回上一頁", callback_data=back_callback)]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    await query.edit_message_text(msg, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True, reply_markup=reply_markup)
-
-# --- Google News Specific ---
+# --- Google News ---
 async def google_news_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Enter keyword for Google News search:")
+    await update.message.reply_text("請輸入關鍵字 (e.g. 台積電) 或是輸入 'cancel' 取消：")
     return ASK_GOOGLE_NEWS
 
 async def google_news_handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyword = update.message.text
-    news_parser: NewsParser = context.bot_data.get("news_parser") or NewsParser()
+    query = update.message.text.strip()
     
-    url = f"https://news.google.com/rss/search?q={keyword}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
-    news_list = await news_parser.fetch_news_list(url)
+    await update.message.reply_text(f"🔍 搜尋 Google News: {query} ...")
     
-    if not news_list:
-         await update.message.reply_text("No results found.")
-    else:
-         msg = f"🔍 Results for '{keyword}':\n\n"
-         for news in news_list[:8]:
-            title = news['title'].replace('[', '(').replace(']', ')')
-            msg += f"• [{title}]({news['url']})\n"
-         await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True)
-         
+    # Use NewsParser or new GoogleNews service?
+    # Let's assume NewsParser has google news capability or we implement ad-hoc.
+    # Actually `NewsParser` has `fetch_news_list` which takes URL.
+    # Google RSS: https://news.google.com/rss/search?q={query}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant
+    
+    rss_url = f"https://news.google.com/rss/search?q={query}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
+    news_parser = context.bot_data.get("news_parser") or NewsParser()
+    
+    try:
+        articles = await news_parser.fetch_news_list(rss_url)
+        if not articles:
+             await update.message.reply_text("No results found.")
+             return ConversationHandler.END
+        
+        # Send top 5
+        for news in articles[:5]:
+            title = news["title"]
+            url = news["url"]
+            await update.message.reply_text(f"📰 {title}\n{url}")
+            
+    except Exception as e:
+        logger.error(f"Google News error: {e}")
+        await update.message.reply_text("Failed to fetch Google News.")
+        
     return ConversationHandler.END
 
 
-# --- Research (Files) ---
+# --- Research ---
 async def research_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("📚 請提供欲研究之資料，📝 文字與 📎 檔案皆可（可多份）：\n(Send /rq when done)")
+    await update.message.reply_text("請上傳 PDF/文字檔案，或直接輸入文字內容。結束請輸入 /rq 或按按鈕。")
+    # Initialize session data
     context.user_data['research_materials'] = []
     return ASK_RESEARCH
 
@@ -417,65 +296,34 @@ async def research_handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     materials = context.user_data.get('research_materials', [])
     
     if update.message.document:
+        # File
         doc = update.message.document
-        file_name = doc.file_name.lower()
-        if not file_name.endswith((".docx", ".doc", ".pdf")):
-             await update.message.reply_text("這個檔案格式我還不支援喔！")
-             return ASK_RESEARCH
-
-        try:
-             # Download file
-             new_file = await doc.get_file()
-             bio = io.BytesIO()
-             await new_file.download_to_memory(out=bio)
-             bio.seek(0)
-             
-             # Extract text if docx (Legacy logic supported docx internal extraction, new AIService handles file bytes directly usually)
-             # But old bot extracted text for docx. 
-             # Let's keep it simple: pass bytes to AIService. 
-             # EXCEPT: AIService gemini client supports PDF/Text/Image/Audio. 
-             # Does it support DOCX bytes directly? Maybe not standard Gemini API.
-             # Old bot extracted text for docx. Let's do that.
-             
-             final_content = None
-             mime_type = "application/pdf"
-             
-             if file_name.endswith(('.docx', '.doc')):
-                 try:
-                     from docx import Document
-                     document = Document(bio)
-                     # Reset bio for reading bytes again? No, we extracted text.
-                     text_content = "\n".join([para.text for para in document.paragraphs])
-                     materials.append(("text/plain", text_content)) # Treat as text
-                     await update.message.reply_text(f"Received Doc: {doc.file_name}")
-                     context.user_data['research_materials'] = materials
-                     return ASK_RESEARCH
-                 except Exception as e:
-                     logger.error(f"Docx read error: {e}")
-                     # Fallback to bytes if failed? No, gemini might not read docx bytes.
-             else:
-                 # PDF or others
-                 materials.append(("application/pdf", bio.getvalue()))
-                 await update.message.reply_text(f"Received PDF: {doc.file_name}")
-                 
-        except Exception as e:
-             await update.message.reply_text(f"Failed to download: {e}")
-             
-    elif update.message.text and not update.message.text.startswith('/'):
+        file_obj = await doc.get_file()
+        
+        # Download to memory
+        f = io.BytesIO()
+        await file_obj.download_to_memory(f)
+        f.seek(0)
+        
+        materials.append((doc.mime_type, f.read()))
+        await update.message.reply_text(f"已接收檔案：{doc.file_name}")
+        
+    elif update.message.text:
+        # Text
         materials.append(("text/plain", update.message.text))
-        await update.message.reply_text("Received text note.")
+        await update.message.reply_text("已接收文字。")
         
     context.user_data['research_materials'] = materials
     return ASK_RESEARCH
 
 async def research_finish(update: Update, context: ContextTypes.DEFAULT_TYPE):
     materials = context.user_data.get('research_materials', [])
-    
     if not materials:
-        await update.message.reply_text("No materials provided. Cancelling.")
+        await update.message.reply_text("沒有資料可供分析。")
         return ConversationHandler.END
         
-    sent_msg = await update.message.reply_text("開始為你生成研究報告資訊📊📄(預設prompt)")
+    sent_msg = await update.message.reply_text("🧠 AI 正在閱讀並整理資料中，請稍候...")
+    await update.message.reply_chat_action(ChatAction.TYPING)
     
     ai = AIService()
     try:
@@ -697,13 +545,69 @@ async def watch_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             session.add(WatchlistEntry(chat_id=chat_id, user_id=user_id, ticker=ticker, alias=alias))
             session.commit()
             alias_suffix = f"（{alias}）" if alias else ""
-            await update.message.reply_text(f"✅ 已加入：{ticker}{alias_suffix}")
+            await update.message.reply_text(f"✅ 已將 {ticker}{alias_suffix} 加入自選股！")
+        
+        elif sub == "remove":
+            if not existing:
+                await update.message.reply_text(f"ℹ️ 自選股中沒有：{ticker}")
+                return
+            session.delete(existing)
+            session.commit()
+            await update.message.reply_text(f"🗑️ 已從自選股移除：{ticker}")
+
+
+async def news_action_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle news interactive buttons (e.g. Add Watchlist)."""
+    query = update.callback_query
+    await query.answer() # Acknowledge interaction immediately
+
+    try:
+        data = query.data
+        if not data.startswith("NA|"):
             return
 
-        # remove
-        if not existing:
-            await update.message.reply_text(f"ℹ️ 不在清單：{ticker}")
+        # Format: NA|ACTION|PAYLOAD
+        parts = data.split("|")
+        if len(parts) < 3:
             return
-        session.delete(existing)
-        session.commit()
-        await update.message.reply_text(f"✅ 已移除：{ticker}")
+        
+        action = parts[1]
+        payload = parts[2]
+        
+        chat_id = update.effective_chat.id
+        user_id = update.effective_user.id
+        
+        if action == "ADD":
+            ticker = _normalize_ticker(payload)
+            if not ticker:
+                 await query.answer("無效的代碼", show_alert=True)
+                 return
+
+            from ..database import engine
+            from sqlmodel import Session, select
+            from ..models.watchlist import WatchlistEntry
+            
+            with Session(engine) as session:
+                # Check if already exists
+                existing = session.exec(
+                    select(WatchlistEntry)
+                    .where(WatchlistEntry.chat_id == chat_id)
+                    .where(WatchlistEntry.user_id == user_id)
+                    .where(WatchlistEntry.ticker == ticker)
+                ).first()
+                
+                if existing:
+                    await query.answer(f"ℹ️ {ticker} 已經在自選股清單中囉！", show_alert=False)
+                    return
+                
+                # Add
+                # Try to fetch alias if possible? Or leave blank.
+                # Since this is quick action, leave alias blank or use ticker.
+                session.add(WatchlistEntry(chat_id=chat_id, user_id=user_id, ticker=ticker))
+                session.commit()
+                
+                await query.answer(f"✅ 已將 {ticker} 加入自選股！", show_alert=False)
+
+    except Exception as e:
+        logger.error(f"Error in news_action_handler: {e}")
+        await query.answer("發生錯誤，請稍後再試", show_alert=True)

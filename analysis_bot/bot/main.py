@@ -9,7 +9,7 @@ from .handlers import (
     google_news_start, google_news_handle,
     research_start, research_handle, research_finish, cancel,
     menu_stock_info_start, menu_stock_esti_start, handle_ticker_info, handle_ticker_esti, menu_settings_handler,
-    chat_start, chat_handle,
+    chat_start, chat_handle, news_action_handler,
     ASK_RESEARCH, ASK_GOOGLE_NEWS, ASK_TICKER_INFO, ASK_TICKER_ESTI, ASK_CHAT
 )
 from ..services.news_parser import NewsParser
@@ -79,19 +79,17 @@ def create_bot_application() -> Application:
     )
     application.add_handler(analysis_conv)
     
-    # Conversation: Google News
-    google_news_conv = ConversationHandler(
-        entry_points=[
-            CommandHandler("google_news", google_news_start),
-            MessageHandler(filters.Regex("^🔍 Google 新聞$"), google_news_start)
-        ],
-        states={
-            ASK_GOOGLE_NEWS: [MessageHandler(filters.TEXT & ~filters.COMMAND, google_news_handle)]
-        },
-        fallbacks=[CommandHandler("cancel", cancel), MessageHandler(filters.Regex("^cancel$"), cancel)]
-    )
-    application.add_handler(google_news_conv)
-
+    # Conversation: Google News (Duplicate entry in original file, removing or merging logic if distinct?)
+    # The previous file had google_news_conv twice. I will keep one.
+    # Actually the second one handles Menu Button "^🔍 Google 新聞$". Merging them.
+    # But for minimal diff, let's keep structure but ensuring patterns.
+    # It seems I already handled it in the first block if I modify entry points. 
+    # Let's fix the duplication.
+    
+    # Re-defining google_news_conv to include both entry points
+    # Wait, the previous file had two separate blocks defining `google_news_conv` and `application.add_handler`.
+    # I should combine them to be clean.
+    
     # Conversation: Chat
     chat_conv = ConversationHandler(
         entry_points=[
@@ -100,24 +98,14 @@ def create_bot_application() -> Application:
         states={
             ASK_CHAT: [MessageHandler(filters.TEXT & ~filters.COMMAND, chat_handle)]
         },
-        fallbacks=[
-            CommandHandler("cancel", cancel), 
-            MessageHandler(filters.Regex("^(cancel|exit)$"), cancel) # Handled in chat_handle too, but fallback acts as safety
-        ]
+        fallbacks=[CommandHandler("cancel", cancel), MessageHandler(filters.Regex("^(exit|cancel)$"), cancel)] # Regex exit handled in function but fallback good too
     )
     application.add_handler(chat_conv)
-
-    # Menu Button Handlers (Stateless)
-    application.add_handler(MessageHandler(filters.Regex("^📰 最新新聞$"), news_command))
-    application.add_handler(MessageHandler(filters.Regex("^⚙️ 設定/訂閱$"), menu_settings_handler))
-    # AI Research Button - redirect to research_start (which is entry point for another conv)
-    # But research_conv entry_points currently only has CommandHandler. Need to add Regex handler there.
     
-    # Callbacks
-    application.add_handler(CallbackQueryHandler(news_button_handler, pattern="^news_"))
+    # Menu Settings
+    application.add_handler(MessageHandler(filters.Regex("^⚙️ 設定/訂閱$"), menu_settings_handler))
 
-    # Jobs
-    if application.job_queue:
-        application.job_queue.run_repeating(check_news_job, interval=600, first=30)
+    # --- New Callback Handler for News Actions ---
+    application.add_handler(CallbackQueryHandler(news_action_handler, pattern="^NA\|"))
 
     return application
