@@ -165,7 +165,6 @@ class ReportGenerator:
                        report.append(f"PE {key:<5}: {band_val:>10.2f}          目標價位: {target_str:>10}          潛在漲幅: {pot_str:>10}")
 
         pb_stats = analysis.get('pb_stats', {})
-        print(pb_stats)
         if pb_stats:
             report.append("="*76)
             report.append("股價淨值比四分位數與平均本益比......")

@@ -158,53 +158,53 @@ async def check_news_job(context: ContextTypes.DEFAULT_TYPE = None, bot=None):
             # Link is safer.
             recent_links = {n.link for n in recent_news}
             recent_titles = [n.title for n in recent_news]
-            
-        for article in new_articles:
-            link = article["url"]
-            title = article["title"]
-            source_name = article.get("source_name", "Unknown")
-            
-            # A. Check Exact Link
-            if link in recent_links:
-                continue
-            
-            # B. Check Fuzzy Title Match (Slower but necessary)
-            is_duplicate_title = False
-            for recent_title in recent_titles:
-                ratio = difflib.SequenceMatcher(None, title, recent_title).ratio()
-                if ratio > 0.85: # Threshold
-                    is_duplicate_title = True
-                    logger.info(f"Skipping duplicate title ({ratio:.2f}): '{title}' vs '{recent_title}'")
-                    break
-            
-            if is_duplicate_title:
-                continue
-            
-            # Additional check: Did we already add it in this current batch?
-            # (Though unlikely to have duplicate URL in same batch from same source, 
-            # but maybe cross-source in same run?)
-            # Let's check against final_new_articles as well
-            in_batch_duplicate = False
-            for added in final_new_articles:
-                if difflib.SequenceMatcher(None, title, added['title']).ratio() > 0.85:
-                    in_batch_duplicate = True
-                    break
-            
-            if in_batch_duplicate:
-                continue
 
-            # New article found!
-            news_item = News(
-                title=title,
-                link=link,
-                source=source_name
-            )
-            session.add(news_item)
-            final_new_articles.append(article)
-            # Add to recent_titles so next item in loop checks against this one too
-            recent_titles.append(title) 
-                
-        session.commit()
+            for article in new_articles:
+                link = article["url"]
+                title = article["title"]
+                source_name = article.get("source_name", "Unknown")
+
+                # A. Check Exact Link
+                if link in recent_links:
+                    continue
+
+                # B. Check Fuzzy Title Match (Slower but necessary)
+                is_duplicate_title = False
+                for recent_title in recent_titles:
+                    ratio = difflib.SequenceMatcher(None, title, recent_title).ratio()
+                    if ratio > 0.85: # Threshold
+                        is_duplicate_title = True
+                        logger.info(f"Skipping duplicate title ({ratio:.2f}): '{title}' vs '{recent_title}'")
+                        break
+
+                if is_duplicate_title:
+                    continue
+
+                # Additional check: Did we already add it in this current batch?
+                # (Though unlikely to have duplicate URL in same batch from same source,
+                # but maybe cross-source in same run?)
+                # Let's check against final_new_articles as well
+                in_batch_duplicate = False
+                for added in final_new_articles:
+                    if difflib.SequenceMatcher(None, title, added['title']).ratio() > 0.85:
+                        in_batch_duplicate = True
+                        break
+
+                if in_batch_duplicate:
+                    continue
+
+                # New article found!
+                news_item = News(
+                    title=title,
+                    link=link,
+                    source=source_name
+                )
+                session.add(news_item)
+                final_new_articles.append(article)
+                # Add to recent_titles so next item in loop checks against this one too
+                recent_titles.append(title)
+
+            session.commit()
 
     # Send notifications using final_new_articles
     new_articles = final_new_articles # Update reference for sending logic below
