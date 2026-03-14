@@ -97,6 +97,57 @@ class AnueScraper:
             
         return None
 
+    async def fetch_all_estimates(self, session: aiohttp.ClientSession, stock_id: str, stock_name: str) -> List[Dict]:
+        """
+        Fetch ALL available FactSet EPS estimate articles (not just the latest).
+        Used by EpsMomentumService to build historical EPS timeline.
+        Returns list of dicts sorted by date descending.
+        """
+        search_query = f"鉅亨速報 - Factset 最新調查：{stock_name}({stock_id}-TW)EPS預估+site:news.cnyes.com"
+        url = f"https://tw.search.yahoo.com/search?p={search_query}"
+
+        try:
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+            }
+            async with session.get(url, headers=headers, ssl=False) as resp:
+                if resp.status != 200:
+                    return []
+                text = await resp.text()
+                soup = BeautifulSoup(text, "html.parser")
+
+            target_urls = []
+            for link in soup.find_all("a"):
+                href = link.get("href")
+                if href:
+                    clean_link = href
+                    if "RU=" in href:
+                        try:
+                            clean_link = unquote(href.split("RU=")[1].split("/RK=")[0])
+                        except:
+                            pass
+                    if CNYEA_URL_PART in clean_link:
+                        target_urls.append(clean_link)
+
+            target_urls = list(dict.fromkeys(target_urls))
+            if not target_urls:
+                return []
+
+            tm_yday = float(datetime.now().timetuple().tm_yday)
+            candidates = []
+            for article_url in target_urls:
+                result = await self._process_article(session, article_url, stock_id, tm_yday)
+                if result:
+                    candidates.append(result)
+
+            candidates.sort(key=lambda x: x['date'], reverse=True)
+            return candidates
+
+        except Exception as e:
+            logger.error(f"Anue fetch_all_estimates error: {e}")
+
+        return []
+
     async def _process_article(self, session, url, stock_id, tm_yday) -> Optional[Dict]:
         try:
             async with session.get(url, ssl=False) as resp:

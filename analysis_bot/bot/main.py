@@ -22,7 +22,15 @@ def create_bot_application() -> Application:
     if not settings.TELEGRAM_TOKEN:
         print("Warning: TELEGRAM_TOKEN not set. Bot will not start properly.")
     
-    application = Application.builder().token(settings.TELEGRAM_TOKEN).build()
+    application = (
+        Application.builder()
+        .token(settings.TELEGRAM_TOKEN)
+        .connect_timeout(30.0)
+        .read_timeout(30.0)
+        .write_timeout(30.0)
+        .pool_timeout(10.0)
+        .build()
+    )
     
     # Initialize Services
     application.bot_data["news_parser"] = NewsParser()

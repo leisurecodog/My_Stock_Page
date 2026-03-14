@@ -44,6 +44,7 @@
 *   Python 3.10+
 *   Telegram Bot Token
 *   Gemini API Key (用於 AI 分析)
+*   [Ollama](https://ollama.com/) (選用，支援本機與雲端大語言模型)
 *   Fugle/FinMind Token (選填，用於抓取股價)
 
 ### 1. 安裝依賴
@@ -64,8 +65,14 @@ pip install -r requirements.txt
 TELEGRAM_TOKEN=your_bot_token
 TELEGRAM_CHAT_ID=your_admin_chat_id
 
-# AI Models
+# AI Models (Gemini)
 GEMINI_API_KEY=your_gemini_key
+
+# AI Models (Ollama)
+USE_OLLAMA=true
+OLLAMA_BASE_URL="https://ollama.com"  # 雲端模式填 https://ollama.com，本機填 http://localhost:11434
+OLLAMA_MODEL="glm-5:cloud"            # 想要使用的模型名稱
+OLLAMA_API_KEY="your_ollama_api_key"  # 雲端模式必填，本機模式留空
 
 # Stock Data APIs
 FUGLE_API_KEY=your_fugle_key

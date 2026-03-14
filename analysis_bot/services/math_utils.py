@@ -106,41 +106,48 @@ class MathUtils:
         last_price = prices_np[-1]
         band_labels = MathUtils._generate_band_labels()
         
-        # Calculate probabilities based on current price position relative to bands
-        # Legacy logic logic adapted
-        up_prob = 0.0
-        hold_prob = 0.0
-        down_prob = sum(MathUtils.PROB_WEIGHTS) # Should be ~1.0
-        
-        # Simplified probability mapping (mimicking strict legacy logic)
-        # Note: The legacy logic had a loop checking `last_price < result[band][-1]`
-        # We need to construct the bands dict first with full arrays or just last values
         last_band_values = {k: v[-1] for k, v in bands.items()}
-        last_band_values["TL"] = bands["TL"][-1]
-        
-        # Sort labels by value (High to Low typically, TL+3SD to TL-3SD)
-        # band_labels is sorted TL+3SD ... TL ... TL-3SD
-        
-        for idx, band in enumerate(band_labels):
-            band_val = last_band_values[band]
-            weight = MathUtils.PROB_WEIGHTS[idx]
-            
-            if last_price < band_val:
-                up_prob += weight
-                down_prob -= weight
-            else:
-                hold_prob += weight
-                down_prob -= weight
-                break # Legacy logic breaks on first match?
-                
-        # Calculate expected values
         tl_last = last_band_values["TL"]
-        tl_minus_3sd = last_band_values["TL-3SD"]
-        tl_plus_3sd = last_band_values["TL+3SD"]
         
-        expect_val_bull_1 = up_prob * (tl_last - last_price) - down_prob * last_price
-        expect_val_bull_2 = up_prob * (tl_last - last_price) - down_prob * (last_price - tl_minus_3sd)
-        expect_val_bear_1 = down_prob * (last_price - tl_last) - up_prob * (tl_plus_3sd - last_price)
+        # Simplify probability calculation using normal distribution approximations
+        # Z = (last_price - tl_last) / sd
+        # Avoid SciPy dependency, use simple z-score to probability mapping
+        z_score = (last_price - tl_last) / sd
+        
+        # Approximate cumulative distribution function (CDF)
+        # Using a logistic approximation for normal CDF to remain dependency-free
+        # F(x) ≈ 1 / (1 + e^(-1.702 * x))
+        # This gives the probability that value is LESS than last_price
+        cdf_prob = 1.0 / (1.0 + np.exp(-1.702 * z_score))
+        
+        # In mean reversion, if price is above TL (z > 0, cdf > 0.5), it tends to revert down (down_prob > up_prob)
+        # If price is below TL (z < 0, cdf < 0.5), it tends to revert up (up_prob > down_prob)
+        
+        # Base probabilities representing movement towards the mean
+        down_prob = cdf_prob
+        up_prob = 1.0 - cdf_prob
+        hold_prob = 0.0 # Simplify to just Up/Down for binary expectation models
+        
+        # Calculate expected values (Risk/Reward context)
+        # Expected Value = (Prob of Success * Potential Profit) - (Prob of Failure * Potential Loss)
+        
+        # Bull 1: Target is TL (Mean), Stop Loss is TL-1SD
+        tl_minus_1sd = last_band_values["TL-1SD"]
+        upside_tl = max(0.0, tl_last - last_price)
+        downside_1sd = max(0.0, last_price - tl_minus_1sd)
+        expect_val_bull_1 = (up_prob * upside_tl) - (down_prob * downside_1sd)
+        
+        # Bull 2: Target is TL+1SD, Stop Loss is TL-2SD
+        tl_plus_1sd = last_band_values["TL+1SD"]
+        tl_minus_2sd = last_band_values["TL-2SD"]
+        upside_1sd = max(0.0, tl_plus_1sd - last_price)
+        downside_2sd = max(0.0, last_price - tl_minus_2sd)
+        expect_val_bull_2 = (up_prob * upside_1sd) - (down_prob * downside_2sd)
+        
+        # Bear 1: Target is TL (Mean), Stop Loss is TL+1SD
+        downside_target = max(0.0, last_price - tl_last)
+        upside_risk = max(0.0, tl_plus_1sd - last_price)
+        expect_val_bear_1 = (down_prob * downside_target) - (up_prob * upside_risk)
 
         return {
             "prob": [up_prob * 100, hold_prob * 100, down_prob * 100],

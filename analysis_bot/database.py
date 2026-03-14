@@ -17,6 +17,7 @@ def create_db_and_tables():
     from .models.config import SystemConfig
     from .models.content import News, Report, Podcast
     from .models.watchlist import WatchlistEntry
+    from .models.eps_estimate import EpsEstimate
     
     SQLModel.metadata.create_all(engine)
 

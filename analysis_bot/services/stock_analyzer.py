@@ -8,6 +8,7 @@ from .data_fetcher import DataFetcher
 from .math_utils import MathUtils
 from .finmind_fetcher import FinMindFetcher
 from .anue_scraper import AnueScraper
+from .eps_momentum_service import EpsMomentumService
 from ..config import get_settings
 
 settings = get_settings()
@@ -20,7 +21,7 @@ class StockAnalyzer:
         self.finmind = FinMindFetcher() # Tokens loaded from settings automatically
         self.anue = AnueScraper()
 
-    async def analyze_stock(self, ticker: str) -> Dict[str, Any]:
+    async def analyze_stock(self, ticker: str, lohas_years: float = 3.5) -> Dict[str, Any]:
         """
         Perform comprehensive analysis on a stock.
         """
@@ -123,9 +124,24 @@ class StockAnalyzer:
         target_mean_price = info.get("targetMeanPrice")
         gross_margins = info.get("grossMargins")
         
-        # 3. Mean Reversion Analysis (Price based)
-        mr_analysis = MathUtils.mean_reversion(price_series)
-        
+        # 3. Mean Reversion Analysis (Price based - default to 3.5 years / ~882 trading days)
+        target_days = int(lohas_years * 252)
+        lohas_series = price_series[-target_days:] if len(price_series) > target_days else price_series
+        mr_analysis = MathUtils.mean_reversion(lohas_series)
+        mr_analysis["lohas_years"] = lohas_years # Store for report awareness
+
+        # 3.5. EPS Momentum (FactSet historical estimates)
+        eps_momentum = {}
+        if ticker.isdigit():
+            try:
+                eps_momentum_svc = EpsMomentumService()
+                stock_name_for_search = info.get("longName", ticker) or ticker
+                eps_momentum = await eps_momentum_svc.collect_and_analyze(
+                    ticker, stock_name_for_search
+                )
+            except Exception as e:
+                logger.warning(f"EPS Momentum analysis failed for {ticker}: {e}")
+
         # 4. PE/PB Analysis (using FinMind if available)
         pe_analysis = {}
         pb_analysis = {}
@@ -179,7 +195,8 @@ class StockAnalyzer:
             "analysis": {
                 "mean_reversion": mr_analysis,
                 "pe_stats": pe_analysis,
-                "pb_stats": pb_analysis
+                "pb_stats": pb_analysis,
+                "eps_momentum": eps_momentum,
             },
             "chart_data": {
                 "dates": [d.strftime("%Y-%m-%d") for d in valid_history.index.tolist()],
